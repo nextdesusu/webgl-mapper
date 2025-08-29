@@ -6,6 +6,11 @@ export class Vector2 extends Writeable<math.vec2> {
     super(math.vec2.set(math.vec2.create(), x, y));
   }
 
+  set(x: number, y: number) {
+    math.vec2.set(this._array, x, y);
+    return this;
+  }
+
   add(other: Vector2) {
     math.vec2.add(this._array, this._array, other.array);
     return this;
