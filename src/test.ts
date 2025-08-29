@@ -1,5 +1,8 @@
+import { Matrix3 } from "./lib/math/matrix3";
+import { Matrix4 } from "./lib/math/matrix4";
 import { Space2 } from "./lib/math/space2";
 import { Vector2 } from "./lib/math/vector2";
+import { Vector3 } from "./lib/math/vector3";
 
 export function runTest() {
   // Get the WebGL2 context
@@ -11,14 +14,15 @@ export function runTest() {
   }
 
   const canvasSquare = new Space2(canvas.width, canvas.height);
-  const screenSpace = new Space2(1, 1, -1, -1);
+  // const screenSpace = new Space2(1, 1, -1, -1);
   const modelScaleSpace = new Space2(1, 1);
 
   // Vertex Shader (GLSL ES 3.00)
   const vsSource = `#version 300 es
+uniform mat4 u_viewProjectionMatrix;
 in vec4 a_position;
 void main() {
-    gl_Position = a_position;
+    gl_Position = a_position * u_viewProjectionMatrix;
 }
 `;
 
@@ -46,25 +50,55 @@ void main() {
   const positionBuffer = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
   gl.bufferData(gl.ARRAY_BUFFER, geom.positions, gl.STATIC_DRAW);
-
   // Get attribute location and enable it
   const positionAttributeLocation = gl.getAttribLocation(shaderProgram, 'a_position');
-  gl.enableVertexAttribArray(positionAttributeLocation);
+  const camera = new Camera({ left: 0, right: gl.canvas.width, bottom: gl.canvas.height, top: 0});
 
-  // Tell the attribute how to get data out of positionBuffer
-  gl.vertexAttribPointer(
-    positionAttributeLocation,
-    2,          // size (2 components per vertex: x, y)
-    gl.FLOAT,   // type of data
-    false,      // normalize data
-    0,          // stride (0 means use type and size)
-    0           // offset (start at the beginning of the buffer)
-  );
+  const speed = 0.1;
+  document.addEventListener("keydown", (key) => {
+    const tapped = key.code;
 
-  // Draw the square
-  gl.clearColor(0.0, 0.0, 0.0, 1.0); // Clear to black
-  gl.clear(gl.COLOR_BUFFER_BIT);
-  gl.drawArrays(gl.TRIANGLES, 0, geom.vertexCount); // Draw 6 vertices (2 triangles)
+    console.log('pressed', tapped);
+    if (tapped === 'KeyA') {
+      camera.position.x -= speed;
+    }
+
+    if (tapped === 'KeyD') {
+      camera.position.x += speed;
+    }
+  });
+
+  const cameraUniform = gl.getUniformLocation(shaderProgram, "u_viewProjectionMatrix");
+
+  function render(ts: number) {
+    requestAnimationFrame(render);
+    draw()
+  }
+
+  requestAnimationFrame(render);
+  function draw() {
+    if (!gl) {
+      return
+    }
+
+    camera.sync();
+    gl.clearColor(0.0, 0.0, 0.0, 1.0); // Clear to black
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
+    gl.uniformMatrix4fv(cameraUniform, false, camera.matrix.array);
+
+    gl.enableVertexAttribArray(positionAttributeLocation);
+    // Tell the attribute how to get data out of positionBuffer
+    gl.vertexAttribPointer(
+      positionAttributeLocation,
+      2,          // size (2 components per vertex: x, y)
+      gl.FLOAT,   // type of data
+      false,      // normalize data
+      0,          // stride (0 means use type and size)
+      0           // offset (start at the beginning of the buffer)
+    );
+    gl.drawArrays(gl.TRIANGLES, 0, geom.vertexCount); // Draw 6 vertices (2 triangles)
+  }
 }
 
 type Geometry = {
@@ -84,10 +118,41 @@ function planeGeometry(width: number, height: number): Geometry {
     width, height  // Top-right
   ]);
 
-  console.log('GEOM', width, height);
   return {
     positions,
     vertexCount: positions.length / 2,
+  }
+}
+
+type CameraProps = {
+  left: number,
+  right: number,
+  bottom: number,
+  top: number,
+  near?: number,
+  far?: number,
+  center?: Vector3,
+  up?: Vector3,
+}
+
+class Camera {
+  position: Vector3;
+  center: Vector3;
+  up: Vector3;
+  zoom: number;
+  matrix: Matrix4;
+
+  constructor({ left, right, bottom, top, near = -1, far = 1, up = Vector3.up(), center = Vector3.zero() }: CameraProps) {
+    this.matrix = Matrix4.ortho(left, right, bottom, top, near, far);
+    this.zoom = 1;
+    this.position = new Vector3();
+    this.up = up,
+    this.center = center;
+  }
+
+  sync() {
+    this.matrix.setPosition(this.position);
+    console.log('matrix', this.matrix.array);
   }
 }
 

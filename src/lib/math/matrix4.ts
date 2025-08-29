@@ -7,6 +7,11 @@ export class Matrix4 extends Writeable<mat4> {
     super(matrix);
   }
 
+  setPosition(pos: Vector3) {
+    // 12= x
+    this.fromTranslation(pos);
+  }
+
   fromTranslation(translation: Vector3) {
     this._array = mat4.fromTranslation(this._array, translation.array);
     return this;
