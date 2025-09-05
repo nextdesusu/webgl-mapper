@@ -43,7 +43,7 @@ void main() {
 
   const size = 0.5;
 
-  const geomSize = canvasSquare.transformVector2(modelScaleSpace, new Vector2(canvas.width * size, canvas.height * size));
+  const geomSize = canvasSquare.transform(modelScaleSpace, new Vector2(canvas.width * size, canvas.height * size));
   // debugger
   const geom = planeGeometry(geomSize.x, geomSize.y);
   // Create a buffer and put positions into it
@@ -52,7 +52,9 @@ void main() {
   gl.bufferData(gl.ARRAY_BUFFER, geom.positions, gl.STATIC_DRAW);
   // Get attribute location and enable it
   const positionAttributeLocation = gl.getAttribLocation(shaderProgram, 'a_position');
-  const camera = new Camera({ left: 0, right: gl.canvas.width, bottom: gl.canvas.height, top: 0});
+  const camera = new Camera(degreesToRadians(90), 16 / 9, -1000, 1000)
+  camera.position.z = -2;
+  camera.position.y = 2;
 
   const speed = 0.1;
   document.addEventListener("keydown", (key) => {
@@ -65,6 +67,14 @@ void main() {
 
     if (tapped === 'KeyD') {
       camera.position.x += speed;
+    }
+
+    if (tapped === 'KeyW') {
+      camera.position.z += speed;
+    }
+
+    if (tapped === 'KeyS') {
+      camera.position.z -= speed;
     }
   });
 
@@ -81,11 +91,17 @@ void main() {
       return
     }
 
-    camera.sync();
+    const viewProjectionMatrix = camera.computeViewProjectionMatrix();
     gl.clearColor(0.0, 0.0, 0.0, 1.0); // Clear to black
-    gl.clear(gl.COLOR_BUFFER_BIT);
+   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    gl.uniformMatrix4fv(cameraUniform, false, camera.matrix.array);
+    // turn on depth testing
+    // gl.enable(gl.DEPTH_TEST);
+
+    // tell webgl to cull faces
+    // gl.enable(gl.CULL_FACE);
+
+    gl.uniformMatrix4fv(cameraUniform, false, viewProjectionMatrix.array);
 
     gl.enableVertexAttribArray(positionAttributeLocation);
     // Tell the attribute how to get data out of positionBuffer
@@ -124,35 +140,41 @@ function planeGeometry(width: number, height: number): Geometry {
   }
 }
 
-type CameraProps = {
-  left: number,
-  right: number,
-  bottom: number,
-  top: number,
-  near?: number,
-  far?: number,
-  center?: Vector3,
-  up?: Vector3,
-}
-
 class Camera {
   position: Vector3;
-  center: Vector3;
+  target: Vector3;
   up: Vector3;
-  zoom: number;
-  matrix: Matrix4;
+  fov: number;
+  aspect: number;
+  near: number;
+  far: number;
+  private _camera: Matrix4;
+  private _inverse: Matrix4;
+  private _projection: Matrix4;
+  private _viewProjection: Matrix4;
 
-  constructor({ left, right, bottom, top, near = -1, far = 1, up = Vector3.up(), center = Vector3.zero() }: CameraProps) {
-    this.matrix = Matrix4.ortho(left, right, bottom, top, near, far);
-    this.zoom = 1;
+  constructor(fov: number, aspect: number, near: number, far: number) {
+    this.fov = fov;
+    this.aspect = aspect;
+    this.near = near;
+    this.far = far;
+    this._camera = new Matrix4();
+    this._inverse = new Matrix4();
+    this._projection = new Matrix4();
+    this._viewProjection = new Matrix4();
+
+    this.up = Vector3.up();
     this.position = new Vector3();
-    this.up = up,
-    this.center = center;
+    this.target = new Vector3();
   }
 
-  sync() {
-    this.matrix.setPosition(this.position);
-    console.log('matrix', this.matrix.array);
+  computeViewProjectionMatrix(): Matrix4 {
+    const projectionMatrix = this._projection.perspective(this.fov, this.aspect, this.near, this.far);
+    const camera = this._camera.lookAt(this.position, this.target, this.up);
+    const viewMatrix = camera.inverse(this._inverse);
+    const viewProjection = this._viewProjection.multiplyMatrices(projectionMatrix, viewMatrix);
+
+    return viewProjection;
   }
 }
 
@@ -185,4 +207,8 @@ function createShader(gl: WebGL2RenderingContext, type: number, source: string) 
     throw Error("Failed to compile shader!");
   }
   return shader;
+}
+
+function degreesToRadians(degrees: number) {
+  return degrees * (Math.PI / 180);
 }

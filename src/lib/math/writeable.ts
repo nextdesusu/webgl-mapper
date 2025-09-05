@@ -1,6 +1,6 @@
 import type { ArrayLike, IWriteableStructure } from "./types";
 
-export abstract class Writeable<T extends ArrayLike> implements IWriteableStructure {
+export abstract class ArrayBasedStructure<T extends ArrayLike> implements IWriteableStructure {
   protected _array: T;
 
   constructor(array: T) {

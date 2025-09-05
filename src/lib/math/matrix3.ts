@@ -1,8 +1,8 @@
 import * as math from "gl-matrix";
 import { Vector2 } from "./vector2";
-import { Writeable } from "./writeable";
+import { ArrayBasedStructure } from "./writeable";
 
-export class Matrix3 extends Writeable<math.mat3> {
+export class Matrix3 extends ArrayBasedStructure<math.mat3> {
   constructor(mat3 = math.mat3.create()) {
     super(mat3);
   }

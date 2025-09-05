@@ -13,7 +13,7 @@ export class Space2 {
     this.minY = minY;
   }
 
-  transformVector2(bySpace: Space2, vec2: Vector2, out = vec2) {
+  transform(bySpace: Space2, vec2: Vector2, out = vec2) {
     const newX = numberInRange(this.minX, this.maxX, bySpace.minX, bySpace.maxX, vec2.x);
     const newY =  numberInRange(this.minY, this.maxY, bySpace.minY, bySpace.maxY, vec2.y);
     return out.set(newX, newY);
