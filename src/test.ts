@@ -1,8 +1,8 @@
-import { Matrix3 } from "./lib/math/matrix3";
-import { Matrix4 } from "./lib/math/matrix4";
+import { Viewport } from "./lib/math/viewport";
 import { Space2 } from "./lib/math/space2";
 import { Vector2 } from "./lib/math/vector2";
-import { Vector3 } from "./lib/math/vector3";
+import { Matrix3 } from "./lib/math/matrix3";
+import { Color } from "./lib/math/color";
 
 export function runTest() {
   // Get the WebGL2 context
@@ -19,19 +19,31 @@ export function runTest() {
 
   // Vertex Shader (GLSL ES 3.00)
   const vsSource = `#version 300 es
-uniform mat4 u_viewProjectionMatrix;
-in vec4 a_position;
+precision highp float;
+uniform mat3 u_viewProjectionMatrix;
+// in mat3 a_instanceTransform;
+in vec2 a_position;
+in vec4 a_color;
+out vec4 v_color;
 void main() {
-    gl_Position = a_position * u_viewProjectionMatrix;
+  v_color = a_color;
+// Multiply the position by the matrix.
+
+  float s = float(gl_InstanceID);
+  float translatedBy = 200.0;
+  vec3 translation = vec3(translatedBy * s, translatedBy * s, 0);
+  vec3 transformed = vec3(a_position, 1.0) + translation;
+  gl_Position = vec4((u_viewProjectionMatrix * transformed).xy, 0, 1);
 }
 `;
 
   // Fragment Shader (GLSL ES 3.00)
   const fsSource = `#version 300 es
-precision mediump float;
+precision highp float;
+in vec4 v_color;
 out vec4 outColor;
 void main() {
-    outColor = vec4(1.0, 0.0, 0.0, 1.0); // Red color
+  outColor = v_color;
 }
 `;
 
@@ -39,51 +51,83 @@ void main() {
   const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
 
   const shaderProgram = createProgram(gl, vertexShader, fragmentShader);
-  gl.useProgram(shaderProgram);
 
-  const size = 0.5;
+  const speed = 50;
 
-  const geomSize = canvasSquare.transform(modelScaleSpace, new Vector2(canvas.width * size, canvas.height * size));
-  // debugger
-  const geom = planeGeometry(geomSize.x, geomSize.y);
-  // Create a buffer and put positions into it
-  const positionBuffer = gl.createBuffer();
-  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-  gl.bufferData(gl.ARRAY_BUFFER, geom.positions, gl.STATIC_DRAW);
-  // Get attribute location and enable it
+  const cameraUniform = gl.getUniformLocation(shaderProgram, "u_viewProjectionMatrix");
   const positionAttributeLocation = gl.getAttribLocation(shaderProgram, 'a_position');
-  const camera = new Camera(degreesToRadians(90), 16 / 9, -1000, 1000)
-  camera.position.z = -2;
-  camera.position.y = 2;
+  const colorLocation = gl.getAttribLocation(shaderProgram, "a_color");
 
-  const speed = 0.1;
+  const vao = gl.createVertexArray();
+  gl.bindVertexArray(vao);
+
+  const viewport = new Viewport(canvas.width, canvas.height);
+  viewport.position.set(canvas.width / 2, canvas.height / 2);
   document.addEventListener("keydown", (key) => {
     const tapped = key.code;
 
     console.log('pressed', tapped);
     if (tapped === 'KeyA') {
-      camera.position.x -= speed;
+      viewport.position.x += speed;
     }
 
     if (tapped === 'KeyD') {
-      camera.position.x += speed;
+      viewport.position.x -= speed;
     }
 
     if (tapped === 'KeyW') {
-      camera.position.z += speed;
+      viewport.position.y += speed;
     }
 
     if (tapped === 'KeyS') {
-      camera.position.z -= speed;
+      viewport.position.y -= speed;
     }
   });
 
-  const cameraUniform = gl.getUniformLocation(shaderProgram, "u_viewProjectionMatrix");
+  // Create a buffer and put positions into it
+  const positionBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, SPRITE_GEOMETRY.positions, gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(positionAttributeLocation);
+  gl.vertexAttribPointer(
+    positionAttributeLocation,
+    2,          // size (2 components per vertex: x, y)
+    gl.FLOAT,   // type of data
+    false,      // normalize data
+    0,          // stride (0 means use type and size)
+    0           // offset (start at the beginning of the buffer)
+  );
+
+  const instances: Instance[] = [
+    new Instance(), new Instance()
+  ];
+
+  // instances[0].setPosition(600, 600);
+  instances[0].color.r = 1;
+  // instances[1].setPosition(300, 300);
+  instances[1].color.g = 1;
+
+  const instanceBuffers: InstanceBuffers = {
+    colors: new Float32Array(Array(instances.length * 4).fill(0)),
+    matrices: new Float32Array(Array(instances.length * 9).fill(0)),
+  };
 
   function render(ts: number) {
     requestAnimationFrame(render);
     draw()
   }
+
+  instances.forEach((instance, index) => {
+    instance.sync(index, instanceBuffers);
+  });
+
+  const colorBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, instanceBuffers.colors, gl.STATIC_DRAW);
+
+  gl.enableVertexAttribArray(colorLocation);
+  gl.vertexAttribPointer(colorLocation, 4, gl.FLOAT, false, 0, 0);
+  gl.vertexAttribDivisor(colorLocation, 1);
 
   requestAnimationFrame(render);
   function draw() {
@@ -91,30 +135,58 @@ void main() {
       return
     }
 
-    const viewProjectionMatrix = camera.computeViewProjectionMatrix();
+    checkGl(gl);
+
+    gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(0.0, 0.0, 0.0, 1.0); // Clear to black
-   gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.clear(gl.COLOR_BUFFER_BIT);
 
-    // turn on depth testing
-    // gl.enable(gl.DEPTH_TEST);
+    gl.useProgram(shaderProgram);
+    gl.bindVertexArray(vao);
 
-    // tell webgl to cull faces
-    // gl.enable(gl.CULL_FACE);
+    const viewProjectionMatrix = viewport.viewProjectionMatrix();
+    gl.uniformMatrix3fv(cameraUniform, false, viewProjectionMatrix);
 
-    gl.uniformMatrix4fv(cameraUniform, false, viewProjectionMatrix.array);
-
-    gl.enableVertexAttribArray(positionAttributeLocation);
-    // Tell the attribute how to get data out of positionBuffer
-    gl.vertexAttribPointer(
-      positionAttributeLocation,
-      2,          // size (2 components per vertex: x, y)
-      gl.FLOAT,   // type of data
-      false,      // normalize data
-      0,          // stride (0 means use type and size)
-      0           // offset (start at the beginning of the buffer)
-    );
-    gl.drawArrays(gl.TRIANGLES, 0, geom.vertexCount); // Draw 6 vertices (2 triangles)
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, SPRITE_GEOMETRY.vertexCount, instances.length);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
   }
+}
+
+function checkGl(gl: WebGL2RenderingContext) {
+  const error = gl.getError();
+
+  if (error === gl.NO_ERROR) {
+    return
+  }
+
+  throw Error(`GL error = ${error}`);
+}
+
+class Instance {
+  transform: Matrix3;
+  color: Color;
+  constructor() {
+    this.transform = new Matrix3();
+    this.color = new Color();
+  }
+
+  setPosition(x: number, y: number) {
+    this.transform.translate(new Vector2(x, y));
+  }
+
+  scale(x: number, y: number) {
+    this.transform.scale(new Vector2(x, y));
+  }
+
+  sync(index: number, buffers: InstanceBuffers) {
+    this.transform.copyToArray(buffers.matrices, index * 9);
+    this.color.copyToArray(buffers.colors, index * 4);
+  }
+}
+
+type InstanceBuffers = {
+  matrices: Float32Array;
+  colors: Float32Array;
 }
 
 type Geometry = {
@@ -122,59 +194,29 @@ type Geometry = {
   vertexCount: number;
 }
 
+const SPRITE_GEOMETRY = planeGeometry(100, 100);
+
 function planeGeometry(width: number, height: number): Geometry {
   // Define vertices for a square (two triangles forming a quad)
   const positions = new Float32Array([
-    -width, -height, // Bottom-left
-    width, -height, // Bottom-right
-    -width, height, // Top-left
-
-    -width, height, // Top-left
-    width, -height, // Bottom-right
-    width, height  // Top-right
+    -width, -height, // Bottom-left -1, -1 (p1)
+    width, -height, // Bottom-right  1, -1 (p2)
+    -width, height, // Top-left     -1,  1 (p3) 
+    -width, height, // Top-left     -1,  1 (p3)
+    width, -height, // Bottom-right  1, -1 (p2)
+    width, height  // Top-right      1,  1 (p4)
   ]);
+
+  /**-10001
+   * p1  p2-1
+   *       00
+   * p3  p401
+   * -10001
+   */
 
   return {
     positions,
     vertexCount: positions.length / 2,
-  }
-}
-
-class Camera {
-  position: Vector3;
-  target: Vector3;
-  up: Vector3;
-  fov: number;
-  aspect: number;
-  near: number;
-  far: number;
-  private _camera: Matrix4;
-  private _inverse: Matrix4;
-  private _projection: Matrix4;
-  private _viewProjection: Matrix4;
-
-  constructor(fov: number, aspect: number, near: number, far: number) {
-    this.fov = fov;
-    this.aspect = aspect;
-    this.near = near;
-    this.far = far;
-    this._camera = new Matrix4();
-    this._inverse = new Matrix4();
-    this._projection = new Matrix4();
-    this._viewProjection = new Matrix4();
-
-    this.up = Vector3.up();
-    this.position = new Vector3();
-    this.target = new Vector3();
-  }
-
-  computeViewProjectionMatrix(): Matrix4 {
-    const projectionMatrix = this._projection.perspective(this.fov, this.aspect, this.near, this.far);
-    const camera = this._camera.lookAt(this.position, this.target, this.up);
-    const viewMatrix = camera.inverse(this._inverse);
-    const viewProjection = this._viewProjection.multiplyMatrices(projectionMatrix, viewMatrix);
-
-    return viewProjection;
   }
 }
 
@@ -207,8 +249,4 @@ function createShader(gl: WebGL2RenderingContext, type: number, source: string) 
     throw Error("Failed to compile shader!");
   }
   return shader;
-}
-
-function degreesToRadians(degrees: number) {
-  return degrees * (Math.PI / 180);
 }
