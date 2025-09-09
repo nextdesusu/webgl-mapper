@@ -3,6 +3,7 @@ import { Vector2 } from "./vector2";
 import { ArrayBasedStructure } from "./writeable";
 
 const invertMat = math.mat3.create();
+const tmpVec2 = new Vector2();
 
 export class Matrix3 extends ArrayBasedStructure<math.mat3> {
   constructor(mat3 = math.mat3.create()) {
@@ -10,7 +11,13 @@ export class Matrix3 extends ArrayBasedStructure<math.mat3> {
   }
 
   ortho() {
-    
+
+  }
+
+  getScale(out = new Vector2()) {
+    out.x = this._array[0];
+    out.y = this._array[4];
+    return out;
   }
 
   inverse() {
@@ -38,7 +45,11 @@ export class Matrix3 extends ArrayBasedStructure<math.mat3> {
   }
 
   translate(by: Vector2) {
-    this._array = math.mat3.translate(this._array, this._array, by.array);
+    // Временный хак отменяем увеличение размера
+    const scale = this.getScale(tmpVec2);
+    scale.set(by.x / scale.x, by.y / scale.y);
+    this._array = math.mat3.translate(this._array, this._array, scale.array);
+
     return this;
   }
 
